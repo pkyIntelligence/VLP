@@ -567,50 +567,55 @@ class PreTrainedBertModel(nn.Module):
                 - a path or url to a pretrained model archive containing:
                     . `bert_config.json` a configuration file for the model
                     . `pytorch_model.bin` a PyTorch dump of a BertForPreTraining instance
+                - a BertConfig object that defines the configuration of the model
             cache_dir: an optional path to a folder in which the pre-trained models will be cached.
             state_dict: an optional state dictionnary (collections.OrderedDict object) to use instead of Google pre-trained models
             *inputs, **kwargs: additional input for the specific Bert class
                 (ex: num_labels for BertForSequenceClassification)
         """
-        if pretrained_model_name in PRETRAINED_MODEL_ARCHIVE_MAP:
-            archive_file = PRETRAINED_MODEL_ARCHIVE_MAP[pretrained_model_name]
-        else:
-            archive_file = pretrained_model_name
-        # redirect to the cache, if necessary
-        try:
-            resolved_archive_file = cached_path(
-                archive_file, cache_dir=cache_dir)
-        except FileNotFoundError:
-            logger.error(
-                "Model name '{}' was not found in model name list ({}). "
-                "We assumed '{}' was a path or url but couldn't find any file "
-                "associated to this path or url.".format(
-                    pretrained_model_name,
-                    ', '.join(PRETRAINED_MODEL_ARCHIVE_MAP.keys()),
-                    archive_file))
-            return None
-        if resolved_archive_file == archive_file:
-            logger.info("loading archive file {}".format(archive_file))
-        else:
-            logger.info("loading archive file {} from cache at {}".format(
-                archive_file, resolved_archive_file))
         tempdir = None
-        if os.path.isdir(resolved_archive_file):
-            serialization_dir = resolved_archive_file
-        else:
-            # Extract archive to temp dir
-            tempdir = tempfile.mkdtemp()
-            logger.info("extracting archive file {} to temp dir {}".format(
-                resolved_archive_file, tempdir))
-            with tarfile.open(resolved_archive_file, 'r:gz') as archive:
-                archive.extractall(tempdir)
-            serialization_dir = tempdir
-        # Load config
-        if ('config_path' in kwargs) and kwargs['config_path']:
-            config_file = kwargs['config_path']
-        else:
-            config_file = os.path.join(serialization_dir, CONFIG_NAME)
-        config = BertConfig.from_json_file(config_file)
+        if isinstance(pretrained_model_name, str):
+            if pretrained_model_name in PRETRAINED_MODEL_ARCHIVE_MAP:
+                archive_file = PRETRAINED_MODEL_ARCHIVE_MAP[pretrained_model_name]
+            else:
+                archive_file = pretrained_model_name
+            # redirect to the cache, if necessary
+            if archive_file.endswith("gz") or archive_file.endswith("tar"):  # is actually an archive file
+                try:
+                    resolved_archive_file = cached_path(
+                        archive_file, cache_dir=cache_dir)
+                except FileNotFoundError:
+                    logger.error(
+                        "Model name '{}' was not found in model name list ({}). "
+                        "We assumed '{}' was a path or url but couldn't find any file "
+                        "associated to this path or url.".format(
+                            pretrained_model_name,
+                            ', '.join(PRETRAINED_MODEL_ARCHIVE_MAP.keys()),
+                            archive_file))
+                    return None
+                if resolved_archive_file == archive_file:
+                    logger.info("loading archive file {}".format(archive_file))
+                else:
+                    logger.info("loading archive file {} from cache at {}".format(
+                        archive_file, resolved_archive_file))
+                if os.path.isdir(resolved_archive_file):
+                    serialization_dir = resolved_archive_file
+                else:
+                    # Extract archive to temp dir
+                    tempdir = tempfile.mkdtemp()
+                    logger.info("extracting archive file {} to temp dir {}".format(
+                        resolved_archive_file, tempdir))
+                    with tarfile.open(resolved_archive_file, 'r:gz') as archive:
+                        archive.extractall(tempdir)
+                    serialization_dir = tempdir
+                config_file = os.path.join(serialization_dir, CONFIG_NAME)
+
+            if archive_file.endswith("json"):  # Assume configuration file
+                config_file = archive_file
+
+            config = BertConfig.from_json_file(config_file)
+        else:  # Assumed it's a BertConfig object
+            config = pretrained_model_name
 
         # define new type_vocab_size (there might be different numbers of segment ids)
         if 'type_vocab_size' in kwargs:
@@ -1147,29 +1152,26 @@ class BertForPreTrainingLossMask(PreTrainedBertModel):
 class BertForSeq2SeqDecoder(PreTrainedBertModel):
     """refer to BertForPreTraining"""
 
-    def __init__(self, config, mask_word_id=0, num_labels=2,
-                 search_beam_size=1, length_penalty=1.0, eos_id=0,
-                 forbid_duplicate_ngrams=False, forbid_ignore_set=None,
-                 ngram_size=3, min_len=0, enable_butd=False, len_vis_input=49):
+    def __init__(self, config, mask_word_id=0, eos_id=0):
         super(BertForSeq2SeqDecoder, self).__init__(config)
         self.bert = BertModelIncr(config)
         self.cls = BertPreTrainingHeads(
-            config, self.bert.embeddings.word_embeddings.weight, num_labels=num_labels)
+            config, self.bert.embeddings.word_embeddings.weight, num_labels=config.num_labels)
         self.apply(self.init_bert_weights)
         self.crit_mask_lm = nn.CrossEntropyLoss(reduction='none')
         self.mask_word_id = mask_word_id
-        self.num_labels = num_labels
-        self.len_vis_input = len_vis_input
-        self.search_beam_size = search_beam_size
-        self.length_penalty = length_penalty
+        self.num_labels = config.num_labels
+        self.len_vis_input = config.len_vis_input
+        self.search_beam_size = config.search_beam_size
+        self.length_penalty = config.length_penalty
         self.eos_id = eos_id
-        self.forbid_duplicate_ngrams = forbid_duplicate_ngrams
-        self.forbid_ignore_set = forbid_ignore_set
-        self.ngram_size = ngram_size
-        self.min_len = min_len
+        self.forbid_duplicate_ngrams = config.forbid_duplicate_ngrams
+        self.forbid_ignore_set = config.forbid_ignore_set
+        self.ngram_size = config.ngram_size
+        self.min_len = config.min_len
 
         # will not be initialized when loading BERT weights
-        if enable_butd:
+        if config.enable_butd:
             self.vis_embed = nn.Sequential(nn.Linear(2048, 2048),
                                        nn.ReLU(),
                                        nn.Linear(2048, config.hidden_size),

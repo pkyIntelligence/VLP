@@ -132,6 +132,24 @@ class BertTokenizer(object):
             tokens.append(self.ids_to_tokens[i])
         return tokens
 
+    def convert_tokens_to_string(self, tokens):
+        """ Converts a sequence of tokens (string) in a single string while removing sub-word tokenization artifacts.
+        """
+        if len(tokens) == 0:
+            return ""
+
+        output_str = tokens[0]
+
+        for token in tokens[1:]:
+            if token.startswith("##"):
+                output_str = output_str + token[2:]
+            elif token in ".,;":
+                output_str = output_str + token
+            else:
+                output_str = output_str + " " + token
+
+        return output_str
+
     @classmethod
     def from_pretrained(cls, pretrained_model_name, cache_dir=None, *inputs, **kwargs):
         """
