@@ -4,7 +4,7 @@
   "num_labels": 2,
   "type_vocab_size": 6,
   "task_idx": 3,
-  "beam_size": 1,
+  "search_beam_size": 1,
   "length_penalty": 0,
   "forbid_duplicate_ngrams": true,
   "forbid_ignore_set": null,
