@@ -4,16 +4,7 @@
 import os
 import json
 
-def language_eval(dataset, preds, model_id, split):
-    import sys
-    sys.path.append("coco-caption")
-    if dataset == 'coco':
-        annFile = 'coco-caption/annotations/captions_val2014.json'
-    elif dataset == 'flickr30k':
-        annFile = 'coco-caption/annotations/caption_flickr30k.json'
-    elif dataset == 'cc':
-        annFile = 'coco-caption/annotations/caption_cc_val.json'
-
+def language_eval(preds, annFile, model_id, split):
     from pycocotools.coco import COCO
     from pycocoevalcap.eval import COCOEvalCap
 
@@ -33,7 +24,7 @@ def language_eval(dataset, preds, model_id, split):
     json.dump(preds_filt, open(cache_path, 'w')) # serialize to temporary json file. Sigh, COCO API...
 
     cocoRes = coco.loadRes(cache_path)
-    cocoEval = COCOEvalCap(coco, cocoRes, 'corpus')
+    cocoEval = COCOEvalCap(coco, cocoRes)
     cocoEval.params['image_id'] = cocoRes.getImgIds()
     cocoEval.evaluate()
 
